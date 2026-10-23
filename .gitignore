@@ -1,0 +1,31 @@
+# Virtual Environment
+venv/
+env/
+
+# Environment Variables (NEVER push this)
+.env
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# ML Model (optional - large file)
+ml/model.joblib
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# IDE
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log

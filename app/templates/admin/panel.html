@@ -1,0 +1,251 @@
+{% extends "base.html" %}
+{% block title %}Admin Panel{% endblock %}
+{% block page_title %}ADMIN PANEL{% endblock %}
+
+{% block content %}
+<meta name="csrf-token" content="{{ csrf_token() }}">
+
+<!-- Stats Row -->
+<div class="grid grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
+  {% for label, id, color in [('TOTAL USERS', 'totalUsers', '#00d4ff'), ('ACTIVE', 'activeUsers', '#10b981'), ('LOG ENTRIES', 'logCount', '#f59e0b'), ('MODEL STATUS', 'modelStatus', '#10b981')] %}
+  <div class="rounded-xl p-5" style="background: #0d1420; border: 1px solid #1e2d3d;">
+    <p class="font-mono text-xs mb-2" style="color: #4b6070;">{{ label }}</p>
+    <p class="font-mono text-2xl font-bold" style="color: {{ color }};" id="{{ id }}">--</p>
+  </div>
+  {% endfor %}
+</div>
+
+<!-- Tabs -->
+<div class="flex gap-1 mb-6 p-1 rounded-xl w-fit" style="background: #0d1420; border: 1px solid #1e2d3d;">
+  {% for tab_id, label in [('tab-users', 'USERS'), ('tab-retrain', 'MODEL'), ('tab-logs', 'SYSTEM LOGS')] %}
+  <button onclick="switchTab('{{ tab_id }}')" id="{{ tab_id }}-btn"
+          class="tab-btn px-5 py-2 rounded-lg font-mono text-xs transition-all"
+          style="color: {% if loop.first %}#000; background: #00d4ff;{% else %}#4b6070;{% endif %}">
+    {{ label }}
+  </button>
+  {% endfor %}
+</div>
+
+<!-- Users Tab -->
+<div id="tab-users" class="tab-content">
+  <div class="rounded-xl overflow-hidden" style="background: #0d1420; border: 1px solid #1e2d3d;">
+    <div class="px-5 py-4 border-b flex items-center justify-between" style="border-color: #1e2d3d;">
+      <p class="font-mono text-xs" style="color: #4b6070;">USER MANAGEMENT</p>
+      <span class="font-mono text-xs" style="color: #4b6070;" id="userCount">-- users</span>
+    </div>
+    <div class="overflow-x-auto">
+      <table class="w-full">
+        <thead style="background: #080c14;">
+          <tr>
+            {% for col in ['ID', 'USERNAME', 'EMAIL', 'CITY', 'ROLE', 'STATUS', 'JOINED', 'ACTIONS'] %}
+            <th class="text-left px-4 py-3 font-mono text-xs" style="color: #4b6070;">{{ col }}</th>
+            {% endfor %}
+          </tr>
+        </thead>
+        <tbody id="usersTable"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- Retrain Tab -->
+<div id="tab-retrain" class="tab-content hidden">
+  <div class="max-w-xl space-y-4">
+    <div class="rounded-xl p-6" style="background: #0d1420; border: 1px solid #1e2d3d;">
+      <p class="font-mono text-xs mb-4" style="color: #4b6070;">ML MODEL MANAGEMENT</p>
+      <div class="space-y-3 mb-6">
+        {% for label, val in [('Algorithm', 'Random Forest Regressor'), ('Features', 'Temperature, Humidity, Wind Speed, Pressure'), ('Training Data', '5,000 synthetic samples'), ('Last Retrain', 'On app startup')] %}
+        <div class="flex justify-between text-sm py-2" style="border-bottom: 1px solid #1e2d3d;">
+          <span style="color: #6b8090;">{{ label }}</span>
+          <span style="color: #c8d8e8;">{{ val }}</span>
+        </div>
+        {% endfor %}
+      </div>
+      <button onclick="retrainModel()" id="retrainBtn"
+              class="w-full py-3 rounded-lg font-mono text-sm font-bold text-black"
+              style="background: linear-gradient(135deg, #00d4ff, #0099bb);">
+        RETRAIN MODEL
+      </button>
+    </div>
+    <div id="retrainOutput" class="hidden rounded-xl p-5" style="background: #080c14; border: 1px solid #1e2d3d;">
+      <p class="font-mono text-xs mb-2" style="color: #4b6070;">OUTPUT</p>
+      <pre id="retrainText" class="font-mono text-xs text-emerald-400 whitespace-pre-wrap"></pre>
+    </div>
+  </div>
+</div>
+
+<!-- Logs Tab -->
+<div id="tab-logs" class="tab-content hidden">
+  <div class="rounded-xl overflow-hidden" style="background: #0d1420; border: 1px solid #1e2d3d;">
+    <div class="px-5 py-4 border-b flex items-center justify-between" style="border-color: #1e2d3d;">
+      <p class="font-mono text-xs" style="color: #4b6070;">SYSTEM LOGS</p>
+      <select id="logFilter" onchange="loadLogs()" class="font-mono text-xs px-3 py-1 rounded"
+              style="background: #080c14; border: 1px solid #1e2d3d; color: #c8d8e8; outline: none;">
+        <option value="">ALL LEVELS</option>
+        <option value="INFO">INFO</option>
+        <option value="WARNING">WARNING</option>
+        <option value="ERROR">ERROR</option>
+      </select>
+    </div>
+    <div class="overflow-x-auto max-h-96 overflow-y-auto">
+      <table class="w-full">
+        <thead style="background: #080c14; position: sticky; top: 0;">
+          <tr>
+            {% for col in ['TIME', 'USER', 'LEVEL', 'ACTION', 'IP'] %}
+            <th class="text-left px-4 py-3 font-mono text-xs" style="color: #4b6070;">{{ col }}</th>
+            {% endfor %}
+          </tr>
+        </thead>
+        <tbody id="logsTable"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const CURRENT_USER_ID = {{ user.id }};
+const levelColors = { INFO: '#10b981', WARNING: '#f59e0b', ERROR: '#ef4444' };
+
+function switchTab(id) {
+  document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
+  document.querySelectorAll('.tab-btn').forEach(el => {
+    el.style.background = 'transparent';
+    el.style.color = '#4b6070';
+  });
+  document.getElementById(id).classList.remove('hidden');
+  const btn = document.getElementById(id + '-btn');
+  btn.style.background = '#00d4ff';
+  btn.style.color = '#000';
+}
+
+async function loadStats() {
+  try {
+    const res = await apiFetch('/admin/api/stats');
+    if (!res) return;
+    const d = await res.json();
+    document.getElementById('totalUsers').textContent = d.total_users;
+    document.getElementById('activeUsers').textContent = d.active_users;
+    document.getElementById('logCount').textContent = d.log_count;
+    document.getElementById('modelStatus').textContent = d.model_trained ? 'TRAINED' : 'FALLBACK';
+    document.getElementById('modelStatus').style.color = d.model_trained ? '#10b981' : '#f59e0b';
+  } catch(e) {}
+}
+
+async function loadUsers() {
+  try {
+    const res = await apiFetch('/admin/api/users');
+    if (!res) return;
+    const users = await res.json();
+    document.getElementById('userCount').textContent = `${users.length} users`;
+    document.getElementById('usersTable').innerHTML = users.map(u => `
+      <tr style="border-bottom: 1px solid #1e2d3d11;" class="hover:bg-white/[0.02]">
+        <td class="px-4 py-3 font-mono text-xs" style="color: #4b6070;">#${u.id}</td>
+        <td class="px-4 py-3 text-sm text-white">${u.username}</td>
+        <td class="px-4 py-3 text-xs" style="color: #6b8090;">${u.email}</td>
+        <td class="px-4 py-3 text-xs" style="color: #6b8090;">${u.city || '-'}</td>
+        <td class="px-4 py-3">
+          <span class="font-mono text-xs px-2 py-0.5 rounded"
+                style="background: ${u.role === 'admin' ? '#00d4ff22' : '#10b98122'}; color: ${u.role === 'admin' ? '#00d4ff' : '#10b981'};">
+            ${u.role.toUpperCase()}
+          </span>
+        </td>
+        <td class="px-4 py-3">
+          <span class="font-mono text-xs" style="color: ${u.is_active ? '#10b981' : '#ef4444'};">
+            ${u.is_active ? '● ACTIVE' : '○ DISABLED'}
+          </span>
+        </td>
+        <td class="px-4 py-3 text-xs" style="color: #4b6070;">${u.created_at ? u.created_at.slice(0,10) : '-'}</td>
+        <td class="px-4 py-3">
+          <div class="flex gap-2">
+            ${u.id !== CURRENT_USER_ID ? `
+              <button onclick="toggleUser(${u.id}, ${!u.is_active})"
+                      class="font-mono text-xs px-2 py-1 rounded transition-colors"
+                      style="background: #1e2d3d; color: #c8d8e8;">
+                ${u.is_active ? 'DISABLE' : 'ENABLE'}
+              </button>
+              <button onclick="deleteUser(${u.id}, '${u.username}')"
+                      class="font-mono text-xs px-2 py-1 rounded"
+                      style="background: #ef444422; color: #ef4444;">
+                DELETE
+              </button>
+            ` : '<span class="text-xs" style="color: #4b6070;">YOU</span>'}
+          </div>
+        </td>
+      </tr>
+    `).join('');
+  } catch(e) {}
+}
+
+async function toggleUser(id, active) {
+  const res = await apiFetch(`/admin/api/users/${id}`, { method: 'PUT', body: JSON.stringify({ is_active: active }) });
+  if (res && res.ok) { showToast(`User ${active ? 'enabled' : 'disabled'}`, 'info'); loadUsers(); }
+  else showToast('Update failed', 'error');
+}
+
+async function deleteUser(id, name) {
+  if (!confirm(`Delete user "${name}"? This cannot be undone.`)) return;
+  const res = await apiFetch(`/admin/api/users/${id}`, { method: 'DELETE' });
+  if (res && res.ok) { showToast(`User "${name}" deleted`, 'info'); loadUsers(); loadStats(); }
+  else showToast('Delete failed', 'error');
+}
+
+async function retrainModel() {
+  const btn = document.getElementById('retrainBtn');
+  btn.textContent = 'TRAINING...';
+  btn.disabled = true;
+  btn.style.opacity = '0.6';
+  document.getElementById('retrainOutput').classList.remove('hidden');
+  document.getElementById('retrainText').textContent = 'Initializing training pipeline...\n';
+
+  try {
+    const res = await apiFetch('/admin/api/retrain', { method: 'POST' });
+    if (!res) return;
+    const data = await res.json();
+    if (res.ok) {
+      document.getElementById('retrainText').textContent = data.output || 'Training complete.';
+      showToast('Model retrained successfully', 'success');
+    } else {
+      document.getElementById('retrainText').textContent = data.output || data.error;
+      showToast('Retraining failed', 'error');
+    }
+  } catch(e) {
+    showToast('Request failed', 'error');
+  } finally {
+    btn.textContent = 'RETRAIN MODEL';
+    btn.disabled = false;
+    btn.style.opacity = '1';
+    loadStats();
+  }
+}
+
+async function loadLogs() {
+  const level = document.getElementById('logFilter').value;
+  const url = `/admin/api/logs${level ? '?level=' + level : ''}`;
+  try {
+    const res = await apiFetch(url);
+    if (!res) return;
+    const data = await res.json();
+    document.getElementById('logsTable').innerHTML = data.logs.map(l => `
+      <tr style="border-bottom: 1px solid #1e2d3d11;" class="hover:bg-white/[0.02]">
+        <td class="px-4 py-2.5 font-mono text-xs" style="color: #4b6070;">${l.timestamp.slice(0,19)}</td>
+        <td class="px-4 py-2.5 text-xs text-white">${l.username}</td>
+        <td class="px-4 py-2.5">
+          <span class="font-mono text-xs px-2 py-0.5 rounded"
+                style="background: ${levelColors[l.level] || '#4b6070'}22; color: ${levelColors[l.level] || '#4b6070'};">
+            ${l.level}
+          </span>
+        </td>
+        <td class="px-4 py-2.5 text-xs" style="color: #c8d8e8;">${l.action}</td>
+        <td class="px-4 py-2.5 font-mono text-xs" style="color: #4b6070;">${l.ip_address || '-'}</td>
+      </tr>
+    `).join('');
+  } catch(e) {}
+}
+
+loadStats();
+loadUsers();
+loadLogs();
+</script>
+{% endblock %}

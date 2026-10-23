@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Sentinel — Register</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+  <style>
+    body { background: #080c14; font-family: 'DM Sans', sans-serif; min-height: 100vh; display: flex; align-items: center; justify-content: center; }
+    .grid-bg {
+      background-image: linear-gradient(rgba(0,212,255,0.04) 1px, transparent 1px),
+                        linear-gradient(90deg, rgba(0,212,255,0.04) 1px, transparent 1px);
+      background-size: 40px 40px;
+    }
+    input:focus { outline: none; border-color: #00d4ff !important; box-shadow: 0 0 0 2px rgba(0,212,255,0.15); }
+    .btn-primary { background: linear-gradient(135deg, #00d4ff, #0099bb); transition: all 0.2s; }
+    .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 4px 20px rgba(0,212,255,0.3); }
+  </style>
+</head>
+<body class="grid-bg">
+  <div class="w-full max-w-md px-4 py-8">
+    <div class="text-center mb-8">
+      <h1 class="font-mono text-xl font-bold text-white tracking-wider">SENTINEL</h1>
+      <p class="text-xs mt-1" style="color: #4b6070;">CREATE ACCOUNT</p>
+    </div>
+
+    <div class="rounded-2xl p-8" style="background: #0d1420; border: 1px solid #1e2d3d;">
+
+      {% if error %}
+      <div class="mb-4 px-4 py-3 rounded-lg text-sm" style="background: #2d080866; border: 1px solid #ef444444; color: #f87171;">
+        {{ error }}
+      </div>
+      {% endif %}
+
+      {% if form_errors %}
+      <div class="mb-4 space-y-1">
+        {% for err in form_errors %}
+        <p class="text-xs px-3 py-1 rounded" style="background: #2d080844; color: #f87171;">{{ err }}</p>
+        {% endfor %}
+      </div>
+      {% endif %}
+
+      <form method="POST" class="space-y-4">
+
+        <div>
+          <label class="block text-xs font-mono mb-2" style="color: #4b6070;">USERNAME</label>
+          <input type="text" name="username" required
+                 class="w-full px-4 py-3 rounded-lg text-sm transition-all"
+                 style="background: #080c14; border: 1px solid #1e2d3d; color: #c8d8e8;"
+                 value="{{ request.form.get('username', '') }}"/>
+        </div>
+
+        <div>
+          <label class="block text-xs font-mono mb-2" style="color: #4b6070;">EMAIL ADDRESS</label>
+          <input type="email" name="email" required
+                 class="w-full px-4 py-3 rounded-lg text-sm transition-all"
+                 style="background: #080c14; border: 1px solid #1e2d3d; color: #c8d8e8;"
+                 value="{{ request.form.get('email', '') }}"/>
+        </div>
+
+        <div>
+          <label class="block text-xs font-mono mb-2" style="color: #4b6070;">YOUR CITY</label>
+          <input type="text" name="city" required
+                 class="w-full px-4 py-3 rounded-lg text-sm transition-all"
+                 style="background: #080c14; border: 1px solid #1e2d3d; color: #c8d8e8;"
+                 value="{{ request.form.get('city', '') }}"/>
+        </div>
+
+        <div>
+          <label class="block text-xs font-mono mb-2" style="color: #4b6070;">PASSWORD</label>
+          <input type="password" name="password" required
+                 class="w-full px-4 py-3 rounded-lg text-sm transition-all"
+                 style="background: #080c14; border: 1px solid #1e2d3d; color: #c8d8e8;"
+                 placeholder="Min 8 chars, 1 uppercase, 1 number"/>
+        </div>
+
+        <div>
+          <label class="block text-xs font-mono mb-2" style="color: #4b6070;">CONFIRM PASSWORD</label>
+          <input type="password" name="confirm_password" required
+                 class="w-full px-4 py-3 rounded-lg text-sm transition-all"
+                 style="background: #080c14; border: 1px solid #1e2d3d; color: #c8d8e8;"/>
+        </div>
+
+        <button type="submit" class="btn-primary w-full py-3 rounded-lg font-mono text-sm font-bold text-white tracking-wider mt-2">
+          CREATE ACCOUNT →
+        </button>
+      </form>
+
+      <p class="text-center text-sm mt-6" style="color: #4b6070;">
+        Already registered? <a href="{{ url_for('auth.login') }}" style="color: #00d4ff;">Sign in</a>
+      </p>
+    </div>
+  </div>
+</body>
+</html>

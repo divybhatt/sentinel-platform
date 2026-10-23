@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Sentinel — Login</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+  <style>
+    body { background: #080c14; font-family: 'DM Sans', sans-serif; min-height: 100vh; display: flex; align-items: center; justify-content: center; }
+    .grid-bg {
+      background-image: linear-gradient(rgba(0,212,255,0.04) 1px, transparent 1px),
+                        linear-gradient(90deg, rgba(0,212,255,0.04) 1px, transparent 1px);
+      background-size: 40px 40px;
+    }
+    .glow-ring { box-shadow: 0 0 0 1px #1e2d3d, 0 0 40px rgba(0,212,255,0.08); }
+    input:focus { outline: none; border-color: #00d4ff !important; box-shadow: 0 0 0 2px rgba(0,212,255,0.15); }
+    .btn-primary {
+      background: linear-gradient(135deg, #00d4ff, #0099bb);
+      transition: all 0.2s;
+    }
+    .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 4px 20px rgba(0,212,255,0.3); }
+    @keyframes fadeUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+    .fade-up { animation: fadeUp 0.5s ease forwards; }
+  </style>
+</head>
+<body class="grid-bg">
+  <div class="w-full max-w-md px-4 fade-up">
+    <!-- Logo -->
+    <div class="text-center mb-8">
+      <div class="inline-flex items-center justify-center w-14 h-14 rounded-2xl mb-4"
+           style="background: linear-gradient(135deg, #00d4ff22, #0099bb44); border: 1px solid #00d4ff44;">
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none">
+          <path d="M12 2L12 6M12 18L12 22M4.93 4.93L7.76 7.76M16.24 16.24L19.07 19.07M2 12L6 12M18 12L22 12" stroke="#00d4ff" stroke-width="1.5" stroke-linecap="round"/>
+          <circle cx="12" cy="12" r="4" stroke="#00d4ff" stroke-width="1.5"/>
+        </svg>
+      </div>
+      <h1 class="font-mono text-2xl font-bold text-white tracking-wider">SENTINEL</h1>
+      <p class="text-sm mt-1" style="color: #4b6070; letter-spacing: 0.1em; font-size: 11px;">WEATHER & RISK INTELLIGENCE PLATFORM</p>
+    </div>
+
+    <!-- Card -->
+    <div class="rounded-2xl p-8 glow-ring" style="background: #0d1420; border: 1px solid #1e2d3d;">
+      <h2 class="font-mono text-sm font-bold text-white mb-6 tracking-wide">SIGN IN</h2>
+
+      {% if error %}
+      <div class="mb-4 px-4 py-3 rounded-lg text-sm" style="background: #2d080866; border: 1px solid #ef444444; color: #f87171;">
+        {{ error }}
+      </div>
+      {% endif %}
+
+      <form method="POST" action="{{ url_for('auth.login') }}" class="space-y-4">
+
+        <div>
+          <label class="block text-xs font-mono mb-2" style="color: #4b6070; letter-spacing: 0.05em;">EMAIL ADDRESS</label>
+          <input type="email" name="email" required placeholder="you@example.com"
+                 class="w-full px-4 py-3 rounded-lg text-sm text-white transition-all"
+                 style="background: #080c14; border: 1px solid #1e2d3d; color: #c8d8e8;"
+                 value="{{ request.form.get('email', '') }}"/>
+        </div>
+
+        <div>
+          <label class="block text-xs font-mono mb-2" style="color: #4b6070; letter-spacing: 0.05em;">PASSWORD</label>
+          <input type="password" name="password" required placeholder="••••••••"
+                 class="w-full px-4 py-3 rounded-lg text-sm text-white transition-all"
+                 style="background: #080c14; border: 1px solid #1e2d3d; color: #c8d8e8;"/>
+        </div>
+
+        <button type="submit" class="btn-primary w-full py-3 rounded-lg font-mono text-sm font-bold text-white tracking-wider mt-2">
+          ACCESS PLATFORM →
+        </button>
+      </form>
+
+      <div class="mt-6 pt-6 border-t" style="border-color: #1e2d3d;">
+        <p class="text-center text-sm" style="color: #4b6070;">
+          No account?
+          <a href="{{ url_for('auth.register') }}" class="ml-1" style="color: #00d4ff;">Create one</a>
+        </p>
+      </div>
+
+      <!-- Demo creds -->
+      <div class="mt-4 p-3 rounded-lg" style="background: #080c1488; border: 1px solid #1e2d3d;">
+        <p class="font-mono text-xs mb-2" style="color: #4b6070;">DEMO CREDENTIALS</p>
+        <div class="space-y-1 text-xs" style="color: #6b8090;">
+          <p><span style="color: #00d4ff;">Admin:</span> admin@sentinel.com / Admin@123</p>
+          <p><span style="color: #10b981;">User:</span> user@sentinel.com / User@123</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

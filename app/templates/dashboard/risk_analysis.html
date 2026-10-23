@@ -1,0 +1,359 @@
+{% extends "base.html" %}
+{% block title %}Risk Analysis{% endblock %}
+{% block page_title %}RISK ANALYSIS{% endblock %}
+
+{% block head %}
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+  #riskMap { height: 420px; border-radius: 12px; }
+  .leaflet-container { background: #080c14 !important; }
+  .custom-marker { border: none !important; background: transparent !important; }
+  .leaflet-popup-content-wrapper {
+    background: #0d1420 !important; border: 1px solid #1e2d3d !important;
+    border-radius: 10px !important; box-shadow: 0 8px 32px rgba(0,0,0,0.5) !important;
+  }
+  .leaflet-popup-tip { background: #0d1420 !important; }
+  .leaflet-popup-content { margin: 0 !important; }
+</style>
+{% endblock %}
+
+{% block content %}
+<meta name="csrf-token" content="{{ csrf_token() }}">
+
+<!-- Stats -->
+<div class="grid grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
+  {% for label, id, color in [('AVG RISK','avgRisk','#00d4ff'),('MAX RISK','maxRisk','#ef4444'),('HIGH EVENTS','highEvents','#f59e0b'),('MODEL CONF.','modelConf','#10b981')] %}
+  <div class="rounded-xl p-5" style="background:#0d1420;border:1px solid #1e2d3d;">
+    <p class="font-mono text-xs mb-2" style="color:#4b6070;">{{ label }}</p>
+    <p class="font-mono text-3xl font-bold" style="color:{{ color }};" id="{{ id }}">--</p>
+  </div>
+  {% endfor %}
+</div>
+
+<!-- Radar + History -->
+<div class="grid grid-cols-1 xl:grid-cols-2 gap-4 mb-6">
+  <div class="rounded-xl p-5" style="background:#0d1420;border:1px solid #1e2d3d;">
+    <div class="flex items-center justify-between mb-1">
+      <p class="font-mono text-xs" style="color:#4b6070;">ML MODEL — FEATURE CONTRIBUTIONS</p>
+      <span class="font-mono text-xs px-2 py-0.5 rounded" style="background:#10b98122;color:#10b981;" id="radarLiveTag">LIVE</span>
+    </div>
+    <p class="text-xs mb-4" style="color:#4b6070;">Normalized contribution of each weather parameter to the risk score</p>
+    <canvas id="radarChart" height="260"></canvas>
+    <div class="grid grid-cols-2 gap-2 mt-4">
+      {% for label, id, color in [('Temperature','radarTemp','#f59e0b'),('Humidity','radarHum','#06b6d4'),('Wind Speed','radarWind','#00d4ff'),('Pressure','radarPres','#10b981')] %}
+      <div class="rounded-lg p-3 flex items-center gap-2" style="background:#080c14;border:1px solid #1e2d3d;">
+        <span class="w-2 h-2 rounded-full flex-shrink-0" style="background:{{ color }};"></span>
+        <div>
+          <p class="font-mono text-xs" style="color:#4b6070;">{{ label }}</p>
+          <p class="font-mono text-sm font-bold text-white" id="{{ id }}">--</p>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+
+  <div class="rounded-xl p-5" style="background:#0d1420;border:1px solid #1e2d3d;">
+    <div class="flex items-center justify-between mb-4">
+      <p class="font-mono text-xs" style="color:#4b6070;">RISK SCORE HISTORY</p>
+      <div class="flex gap-2">
+        {% for level, color in [('LOW','#10b981'),('MOD','#f59e0b'),('HIGH','#f97316'),('CRIT','#ef4444')] %}
+        <span class="font-mono text-xs px-2 py-0.5 rounded" style="background:{{ color }}22;color:{{ color }};">{{ level }}</span>
+        {% endfor %}
+      </div>
+    </div>
+    <canvas id="historyChart" height="260"></canvas>
+  </div>
+</div>
+
+<!-- World Risk Heatmap -->
+<div class="rounded-xl p-5 mb-6" style="background:#0d1420;border:1px solid #1e2d3d;">
+  <div class="flex items-center justify-between mb-4 flex-wrap gap-3">
+    <div>
+      <p class="font-mono text-xs" style="color:#4b6070;">GLOBAL RISK HEATMAP</p>
+      <p class="text-xs mt-1" style="color:#4b6070;">Click markers for details · Search to add cities</p>
+    </div>
+    <div class="flex gap-2">
+      <input type="text" id="mapCityInput" placeholder="Add city to map..."
+             class="px-3 py-1.5 rounded-lg text-xs"
+             style="background:#080c14;border:1px solid #1e2d3d;color:#c8d8e8;outline:none;width:160px;"
+             onkeydown="if(event.key==='Enter') addCityToMap()"/>
+      <button onclick="addCityToMap()"
+              class="px-3 py-1.5 rounded-lg font-mono text-xs font-bold text-black"
+              style="background:linear-gradient(135deg,#00d4ff,#0099bb);">+ ADD</button>
+    </div>
+  </div>
+  <div id="riskMap"></div>
+  <div class="flex items-center gap-6 mt-3 flex-wrap">
+    {% for label, color in [('Low (<25)','#10b981'),('Moderate (25-50)','#f59e0b'),('High (50-75)','#f97316'),('Critical (75+)','#ef4444')] %}
+    <div class="flex items-center gap-2">
+      <span class="w-3 h-3 rounded-full" style="background:{{ color }};box-shadow:0 0 6px {{ color }}88;"></span>
+      <span class="font-mono text-xs" style="color:#6b8090;">{{ label }}</span>
+    </div>
+    {% endfor %}
+    <span class="font-mono text-xs ml-auto" id="pinCount" style="color:#4b6070;">0 CITIES PINNED</span>
+  </div>
+</div>
+
+<!-- Distribution + Scatter -->
+<div class="grid grid-cols-1 xl:grid-cols-2 gap-4 mb-6">
+  <div class="rounded-xl p-5" style="background:#0d1420;border:1px solid #1e2d3d;">
+    <p class="font-mono text-xs mb-4" style="color:#4b6070;">RISK DISTRIBUTION</p>
+    <canvas id="distChart" height="220"></canvas>
+  </div>
+  <div class="rounded-xl p-5" style="background:#0d1420;border:1px solid #1e2d3d;">
+    <p class="font-mono text-xs mb-4" style="color:#4b6070;">WIND vs RISK CORRELATION</p>
+    <canvas id="scatterChart" height="220"></canvas>
+  </div>
+</div>
+
+<!-- Model Info -->
+<div class="rounded-xl p-5" style="background:#0d1420;border:1px solid #1e2d3d;">
+  <p class="font-mono text-xs mb-4" style="color:#4b6070;">ML MODEL INFORMATION</p>
+  <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+    {% for label, value in [('Algorithm','Random Forest'),('Features','4 Parameters'),('Training Samples','5,000'),('Estimators','100 Trees')] %}
+    <div>
+      <p class="text-xs mb-1" style="color:#4b6070;">{{ label }}</p>
+      <p class="font-mono text-xs text-white">{{ value }}</p>
+    </div>
+    {% endfor %}
+  </div>
+  <div class="p-3 rounded-lg" style="background:#080c14;border:1px solid #1e2d3d;">
+    <p class="font-mono text-xs mb-3" style="color:#4b6070;">FEATURE WEIGHT BREAKDOWN</p>
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-2">
+      {% for factor, weight, color in [('Wind Speed','35%','#00d4ff'),('Temperature','25%','#f59e0b'),('Humidity','20%','#8b5cf6'),('Pressure','20%','#10b981')] %}
+      <div class="rounded p-3" style="background:{{ color }}11;border:1px solid {{ color }}33;">
+        <div class="flex items-center justify-between mb-2">
+          <p class="text-xs font-medium" style="color:{{ color }};">{{ factor }}</p>
+          <p class="font-mono text-xs text-white">{{ weight }}</p>
+        </div>
+        <div class="h-1.5 rounded-full" style="background:#1e2d3d;">
+          <div class="h-full rounded-full" style="background:{{ color }};width:{{ weight }};"></div>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let charts = {};
+let map = null;
+let mapMarkers = {};
+let pinCount = 0;
+
+const CITY_COORDS = {
+  'New York':[40.71,-74.01],'London':[51.51,-0.13],'Tokyo':[35.68,139.65],
+  'Mumbai':[19.08,72.88],'Sydney':[-33.87,151.21],'Dubai':[25.20,55.27],
+  'Paris':[48.86,2.35],'Berlin':[52.52,13.41],'Singapore':[1.35,103.82],
+  'Toronto':[43.65,-79.38],'Chicago':[41.88,-87.63],'Los Angeles':[34.05,-118.24],
+  'Bangkok':[13.76,100.50],'Cairo':[30.04,31.24],'Moscow':[55.76,37.62],
+  'Beijing':[39.90,116.41],'Seoul':[37.57,126.98],'Jakarta':[-6.21,106.85],
+  'Karachi':[24.86,67.00],'Lagos':[6.52,3.38],'São Paulo':[-23.55,-46.63],
+  'Mexico City':[19.43,-99.13],'Buenos Aires':[-34.60,-58.38],'Nairobi':[-1.29,36.82],
+  'Riyadh':[24.69,46.72],'Tehran':[35.69,51.39],'Lahore':[31.55,74.34],   
+  'Madrid':[40.42,-3.70],'Rome':[41.90,12.50],'Vadodara':[22.30,73.18]
+};
+
+function destroyCharts() { Object.values(charts).forEach(c => c&&c.destroy()); charts={}; }
+function getRiskColor(s) {
+  return s<25?'#10b981':s<50?'#f59e0b':s<75?'#f97316':'#ef4444';
+}
+
+// ── MAP ──
+function initMap() {
+  map = L.map('riskMap', { center:[20,0], zoom:2, zoomControl:true, attributionControl:false });
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { maxZoom:18 }).addTo(map);
+
+  const defaultCities = ['New York','London','Tokyo','Mumbai','Sydney','Dubai','Paris','Singapore','Berlin','Toronto','Vadodara'];
+  defaultCities.forEach(city => addMapPin(city));
+}
+
+async function addMapPin(city) {
+  const coords = CITY_COORDS[city];
+  if (!coords) { showToast(`No coordinates for "${city}"`, 'error'); return; }
+
+  try {
+    const res = await apiFetch(`/api/weather/current?city=${encodeURIComponent(city)}`);
+    if (!res) return;
+    const data = await res.json();
+    const w = data.weather, r = data.risk;
+    const color = getRiskColor(r.score);
+    const size = r.score>75?20:r.score>50?16:12;
+
+    const icon = L.divIcon({
+      className: 'custom-marker',
+      html: `<div style="width:${size}px;height:${size}px;border-radius:50%;background:${color};
+               border:2px solid ${color}88;box-shadow:0 0 ${size}px ${color}66;cursor:pointer;
+               transition:all 0.3s;"></div>`,
+      iconSize:[size,size], iconAnchor:[size/2,size/2]
+    });
+
+    if (mapMarkers[city]) map.removeLayer(mapMarkers[city]);
+    else { pinCount++; document.getElementById('pinCount').textContent = `${pinCount} CITIES PINNED`; }
+
+    const marker = L.marker(coords, {icon}).addTo(map);
+    marker.bindPopup(`
+      <div style="padding:14px;min-width:180px;font-family:'Space Mono',monospace;">
+        <p style="color:#00d4ff;font-size:13px;font-weight:700;margin:0 0 10px;">${w.city}</p>
+        <p style="margin:4px 0;font-size:12px;color:#94a3b8;">🌡️ ${w.temperature}°C · ${w.description}</p>
+        <p style="margin:4px 0;font-size:12px;color:#94a3b8;">💨 ${w.wind_speed} km/h</p>
+        <p style="margin:4px 0;font-size:12px;color:#94a3b8;">💧 ${w.humidity}% humidity</p>
+        <p style="margin:4px 0;font-size:12px;color:#94a3b8;">📊 ${w.pressure} hPa</p>
+        <hr style="border-color:#1e2d3d;margin:10px 0;"/>
+        <p style="font-size:20px;font-weight:700;color:${color};margin:0;">
+          ${r.score} <span style="font-size:11px;letter-spacing:1px;">${r.level} RISK</span>
+        </p>
+        <p style="font-size:10px;color:#4b6070;margin:4px 0 0;">${r.description}</p>
+      </div>
+    `);
+    mapMarkers[city] = marker;
+  } catch(e) {}
+}
+
+async function addCityToMap() {
+  const city = document.getElementById('mapCityInput').value.trim();
+  if (!city) return;
+  showToast(`Adding ${city}...`, 'info', 2000);
+  await addMapPin(city);
+  document.getElementById('mapCityInput').value = '';
+}
+
+// ── RADAR ──
+async function loadRadarChart(city) {
+  try {
+    const res = await apiFetch(`/api/weather/current?city=${encodeURIComponent(city)}`);
+    if (!res) return;
+    const {weather:w, risk:r} = await res.json();
+
+    const tempNorm = Math.min(100, Math.max(0, (w.temperature+10)/60*100));
+    const humNorm  = w.humidity;
+    const windNorm = Math.min(100, w.wind_speed/150*100);
+    const presNorm = Math.min(100, Math.max(0, (1050-w.pressure)/100*100));
+
+    document.getElementById('radarTemp').textContent = `${w.temperature}°C`;
+    document.getElementById('radarHum').textContent  = `${w.humidity}%`;
+    document.getElementById('radarWind').textContent = `${w.wind_speed} km/h`;
+    document.getElementById('radarPres').textContent = `${w.pressure} hPa`;
+
+    if (charts.radar) charts.radar.destroy();
+    charts.radar = new Chart(document.getElementById('radarChart'), {
+      type: 'radar',
+      data: {
+        labels: ['Temperature', 'Humidity', 'Wind Speed', 'Low Pressure'],
+        datasets: [{
+          label: `${city} Risk Profile`,
+          data: [tempNorm, humNorm, windNorm, presNorm],
+          backgroundColor: `${getRiskColor(r.score)}22`,
+          borderColor: getRiskColor(r.score),
+          pointBackgroundColor: ['#f59e0b','#06b6d4','#00d4ff','#10b981'],
+          pointBorderColor: '#fff',
+          pointRadius: 5, borderWidth: 2
+        }]
+      },
+      options: {
+        responsive: true,
+        plugins: {
+          legend: { display: false },
+          tooltip: { callbacks: { label: ctx => `${ctx.label}: ${ctx.raw.toFixed(1)}%` } }
+        },
+        scales: {
+          r: {
+            min:0, max:100,
+            ticks: { color:'#4b6070', font:{family:'Space Mono',size:9}, backdropColor:'transparent', stepSize:25 },
+            grid: { color:'#1e2d3d' },
+            pointLabels: { color:'#c8d8e8', font:{family:'Space Mono',size:10} },
+            angleLines: { color:'#1e2d3d' }
+          }
+        }
+      }
+    });
+  } catch(e) {}
+}
+
+// ── HISTORY + CHARTS ──
+async function loadRiskAnalysis() {
+  try {
+    const res = await apiFetch(`/api/weather/risk-history?city={{ user.city }}`);
+    if (!res) return;
+    const {history} = await res.json();
+
+    const scores = history.map(h => h.risk_score);
+    const avg = (scores.reduce((a,b)=>a+b,0)/scores.length).toFixed(1);
+    const max = Math.max(...scores).toFixed(1);
+    const high = scores.filter(s=>s>=50).length;
+
+    document.getElementById('avgRisk').textContent = avg;
+    document.getElementById('maxRisk').textContent = max;
+    document.getElementById('highEvents').textContent = high;
+    document.getElementById('modelConf').textContent = '94.2%';
+
+    if (charts.history) charts.history.destroy();
+    charts.history = new Chart(document.getElementById('historyChart'), {
+      type: 'line',
+      data: {
+        labels: history.map(h=>h.datetime.slice(11,16)),
+        datasets: [{
+          data: scores,
+          backgroundColor: 'rgba(0,212,255,0.06)',
+          fill: true, tension: 0.3, pointRadius: 4,
+          pointBackgroundColor: scores.map(getRiskColor),
+          segment: { borderColor: ctx => getRiskColor(ctx.p1.parsed.y) }
+        }]
+      },
+      options: {
+        responsive: true,
+        plugins: { legend:{display:false} },
+        scales: {
+          x: { ticks:{color:'#4b6070',font:{family:'Space Mono',size:9}}, grid:{color:'#1e2d3d'} },
+          y: { min:0, max:100, ticks:{color:'#4b6070',font:{family:'Space Mono',size:9}}, grid:{color:'#1e2d3d'} }
+        }
+      }
+    });
+
+    const buckets = [0,0,0,0];
+    scores.forEach(s => { if(s<25)buckets[0]++;else if(s<50)buckets[1]++;else if(s<75)buckets[2]++;else buckets[3]++; });
+    if (charts.dist) charts.dist.destroy();
+    charts.dist = new Chart(document.getElementById('distChart'), {
+      type: 'doughnut',
+      data: {
+        labels: ['Low','Moderate','High','Critical'],
+        datasets: [{ data:buckets, backgroundColor:['#10b98155','#f59e0b55','#f9731655','#ef444455'], borderColor:['#10b981','#f59e0b','#f97316','#ef4444'], borderWidth:2 }]
+      },
+      options: { responsive:true, plugins:{ legend:{ labels:{color:'#6b8090',font:{family:'Space Mono',size:9}} } } }
+    });
+
+    const scatterData = history.map(h => ({x:h.wind_speed, y:h.risk_score}));
+    if (charts.scatter) charts.scatter.destroy();
+    charts.scatter = new Chart(document.getElementById('scatterChart'), {
+      type: 'scatter',
+      data: { datasets:[{ data:scatterData, backgroundColor:scatterData.map(d=>getRiskColor(d.y)+'88'), pointRadius:5 }] },
+      options: {
+        responsive: true,
+        plugins: { legend:{display:false} },
+        scales: {
+          x: { title:{display:true,text:'Wind Speed (km/h)',color:'#4b6070',font:{family:'Space Mono',size:9}}, ticks:{color:'#4b6070',font:{family:'Space Mono',size:9}}, grid:{color:'#1e2d3d'} },
+          y: { title:{display:true,text:'Risk Score',color:'#4b6070',font:{family:'Space Mono',size:9}}, ticks:{color:'#4b6070',font:{family:'Space Mono',size:9}}, grid:{color:'#1e2d3d'} }
+        }
+      }
+    });
+  } catch(e) { showToast('Failed to load risk data','error'); }
+}
+
+// ── Live WebSocket updates ──
+window.addEventListener('sentinelWeatherUpdate', (e) => {
+  const d = e.detail;
+  if (d.city === '{{ user.city }}') {
+    loadRadarChart(d.city);
+    document.getElementById('radarLiveTag').textContent = `LIVE · ${d.timestamp}`;
+  }
+});
+
+// Init
+loadRiskAnalysis();
+loadRadarChart('{{ user.city }}');
+setTimeout(initMap, 100);
+</script>
+{% endblock %}

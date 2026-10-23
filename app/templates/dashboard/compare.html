@@ -1,0 +1,312 @@
+{% extends "base.html" %}
+{% block title %}Compare Cities{% endblock %}
+{% block page_title %}COMPARE CITIES{% endblock %}
+
+{% block content %}
+<meta name="csrf-token" content="{{ csrf_token() }}">
+
+<!-- Search Row -->
+<div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+  {% for n, default in [('1', 'New York'), ('2', 'London')] %}
+  <div class="rounded-xl p-4" style="background:#0d1420;border:1px solid #1e2d3d;">
+    <p class="font-mono text-xs mb-3" style="color:#4b6070;">CITY {{ n }}</p>
+    <div class="flex gap-2">
+      <input type="text" id="city{{ n }}Input" value="{{ default }}" placeholder="Enter city..."
+             class="flex-1 px-4 py-2.5 rounded-lg text-sm"
+             style="background:#080c14;border:1px solid #1e2d3d;color:#c8d8e8;outline:none;"
+             onkeydown="if(event.key==='Enter') runCompare()"/>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+<div class="flex justify-center mb-8">
+  <button onclick="runCompare()" id="compareBtn"
+          class="px-10 py-3 rounded-xl font-mono text-sm font-bold text-black"
+          style="background:linear-gradient(135deg,#00d4ff,#0099bb);">
+    ⚡ COMPARE NOW
+  </button>
+</div>
+
+<!-- Results -->
+<div id="compareResults" class="hidden">
+
+  <!-- Winner Banner -->
+  <div id="winnerBanner" class="rounded-xl p-5 mb-6 text-center"
+       style="background:#0d1420;border:1px solid #1e2d3d;">
+    <p class="font-mono text-xs mb-2" style="color:#4b6070;">SAFER CITY</p>
+    <p class="font-mono text-3xl font-bold" id="winnerCity" style="color:#10b981;">--</p>
+    <p class="text-sm mt-1" id="winnerReason" style="color:#6b8090;"></p>
+  </div>
+
+  <!-- Side-by-side cards -->
+  <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+    {% for n in ['1', '2'] %}
+    <div class="rounded-xl p-6 city-card" id="card{{ n }}" style="background:#0d1420;border:1px solid #1e2d3d;">
+      <div class="flex items-start justify-between mb-4">
+        <div>
+          <p class="font-mono text-xs mb-1" style="color:#4b6070;">CITY {{ n }}</p>
+          <p class="text-2xl font-bold text-white" id="cName{{ n }}">--</p>
+        </div>
+        <div class="text-4xl" id="cIcon{{ n }}">⛅</div>
+      </div>
+
+      <!-- Risk Score Ring -->
+      <div class="flex items-center gap-4 mb-5">
+        <div class="text-center">
+          <p class="font-mono text-5xl font-bold leading-none" id="cScore{{ n }}" style="color:#10b981;">--</p>
+          <p class="font-mono text-xs mt-1" id="cLevel{{ n }}" style="color:#10b981;">RISK</p>
+        </div>
+        <div class="flex-1">
+          <div class="risk-meter mb-2">
+            <div class="risk-fill" id="cFill{{ n }}" style="width:0%;background:#10b981;"></div>
+          </div>
+          <p class="text-xs" id="cDesc{{ n }}" style="color:#6b8090;"></p>
+        </div>
+      </div>
+
+      <!-- Weather Stats -->
+      <div class="grid grid-cols-2 gap-3 mb-4">
+        {% for stat, sid in [('Temperature','cTemp'), ('Humidity','cHum'), ('Wind Speed','cWind'), ('Pressure','cPres'), ('Feels Like','cFeels'), ('Visibility','cVis')] %}
+        <div class="rounded-lg p-3" style="background:#080c14;border:1px solid #1e2d3d;">
+          <p class="text-xs mb-1" style="color:#4b6070;">{{ stat }}</p>
+          <p class="font-mono text-sm font-bold text-white" id="{{ sid }}{{ n }}">--</p>
+        </div>
+        {% endfor %}
+      </div>
+
+      <!-- Risk Factors -->
+      <div>
+        <p class="font-mono text-xs mb-2" style="color:#4b6070;">RISK FACTORS</p>
+        <div id="cFactors{{ n }}" class="space-y-1"></div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+
+  <!-- Comparison Bar Chart -->
+  <div class="rounded-xl p-5 mb-6" style="background:#0d1420;border:1px solid #1e2d3d;">
+    <p class="font-mono text-xs mb-4" style="color:#4b6070;">SIDE-BY-SIDE METRICS COMPARISON</p>
+    <canvas id="compareChart" height="120"></canvas>
+  </div>
+
+  <!-- Radar Overlay -->
+  <div class="rounded-xl p-5" style="background:#0d1420;border:1px solid #1e2d3d;">
+    <p class="font-mono text-xs mb-4" style="color:#4b6070;">RISK PROFILE RADAR</p>
+    <div class="max-w-md mx-auto">
+      <canvas id="radarCompare" height="300"></canvas>
+    </div>
+  </div>
+
+</div>
+
+<!-- Loading State -->
+<div id="compareLoading" class="hidden text-center py-20">
+  <div class="inline-block">
+    <svg class="animate-spin w-10 h-10 mx-auto mb-4" style="color:#00d4ff;" fill="none" viewBox="0 0 24 24">
+      <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2" stroke-dasharray="60" stroke-dashoffset="20"/>
+    </svg>
+    <p class="font-mono text-sm" style="color:#4b6070;">FETCHING CITY DATA...</p>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let compareChart = null;
+let radarChart = null;
+
+const ICONS = { clear:'☀️', cloud:'⛅', rain:'🌧️', thunder:'⛈️', snow:'❄️', fog:'🌫️', drizzle:'🌦️' };
+
+function getIcon(desc) {
+  const d = desc.toLowerCase();
+  return Object.entries(ICONS).find(([k]) => d.includes(k))?.[1] || '🌡️';
+}
+
+function getRiskColor(score) {
+  if (score < 25) return '#10b981';
+  if (score < 50) return '#f59e0b';
+  if (score < 75) return '#f97316';
+  return '#ef4444';
+}
+
+async function runCompare() {
+  const city1 = document.getElementById('city1Input').value.trim();
+  const city2 = document.getElementById('city2Input').value.trim();
+  if (!city1 || !city2) { showToast('Enter both city names', 'error'); return; }
+
+  document.getElementById('compareResults').classList.add('hidden');
+  document.getElementById('compareLoading').classList.remove('hidden');
+
+  try {
+    const res = await apiFetch(`/api/weather/compare?city1=${encodeURIComponent(city1)}&city2=${encodeURIComponent(city2)}`);
+    if (!res) return;
+    const data = await res.json();
+
+    document.getElementById('compareLoading').classList.add('hidden');
+    document.getElementById('compareResults').classList.remove('hidden');
+
+    renderCity(1, data.city1);
+    renderCity(2, data.city2);
+    renderWinner(data.city1, data.city2);
+    renderCompareChart(data.city1, data.city2);
+    renderRadar(data.city1, data.city2);
+
+  } catch(e) {
+    document.getElementById('compareLoading').classList.add('hidden');
+    showToast('Failed to load comparison data', 'error');
+  }
+}
+
+function renderCity(n, d) {
+  const w = d.weather, r = d.risk;
+  const color = getRiskColor(r.score);
+
+  document.getElementById(`cName${n}`).textContent = w.city;
+  document.getElementById(`cIcon${n}`).textContent = getIcon(w.description);
+  document.getElementById(`cScore${n}`).textContent = r.score;
+  document.getElementById(`cScore${n}`).style.color = color;
+  document.getElementById(`cLevel${n}`).textContent = r.level;
+  document.getElementById(`cLevel${n}`).style.color = color;
+  document.getElementById(`cFill${n}`).style.width = `${r.score}%`;
+  document.getElementById(`cFill${n}`).style.background = color;
+  document.getElementById(`cDesc${n}`).textContent = r.description;
+  document.getElementById(`cTemp${n}`).textContent = `${w.temperature}°C`;
+  document.getElementById(`cHum${n}`).textContent = `${w.humidity}%`;
+  document.getElementById(`cWind${n}`).textContent = `${w.wind_speed} km/h`;
+  document.getElementById(`cPres${n}`).textContent = `${w.pressure} hPa`;
+  document.getElementById(`cFeels${n}`).textContent = `${w.feels_like}°C`;
+  document.getElementById(`cVis${n}`).textContent = `${w.visibility} km`;
+
+  const sevColors = { high:'#ef4444', medium:'#f59e0b', low:'#10b981' };
+  document.getElementById(`cFactors${n}`).innerHTML = r.factors.map(f => `
+    <div class="flex items-center justify-between py-1.5" style="border-bottom:1px solid #1e2d3d22;">
+      <div class="flex items-center gap-2">
+        <span class="w-1.5 h-1.5 rounded-full" style="background:${sevColors[f.severity]||'#6b8090'};"></span>
+        <span class="text-xs" style="color:#c8d8e8;">${f.name}</span>
+      </div>
+      <span class="font-mono text-xs" style="color:#6b8090;">${f.value}</span>
+    </div>
+  `).join('');
+
+  // Highlight safer city card
+  const card = document.getElementById(`card${n}`);
+  card.style.borderColor = '#1e2d3d';
+}
+
+function renderWinner(d1, d2) {
+  const s1 = d1.risk.score, s2 = d2.risk.score;
+  const winner = s1 <= s2 ? d1.weather.city : d2.weather.city;
+  const diff = Math.abs(s1 - s2).toFixed(1);
+  const loser = s1 <= s2 ? d2.weather.city : d1.weather.city;
+
+  document.getElementById('winnerCity').textContent = `🏆 ${winner}`;
+  document.getElementById('winnerReason').textContent =
+    diff < 2 ? `Near-tie — only ${diff} points difference` :
+    `${diff} points safer than ${loser}`;
+
+  const banner = document.getElementById('winnerBanner');
+  banner.style.borderColor = s1 <= s2 ? '#10b98144' : '#10b98144';
+  banner.style.background = '#0d280d';
+
+  // Highlight winner card
+  const winIdx = s1 <= s2 ? '1' : '2';
+  document.getElementById(`card${winIdx}`).style.borderColor = '#10b98166';
+}
+
+function renderCompareChart(d1, d2) {
+  if (compareChart) compareChart.destroy();
+  const c1 = d1.weather, c2 = d2.weather;
+  const r1 = d1.risk, r2 = d2.risk;
+
+  const ctx = document.getElementById('compareChart').getContext('2d');
+  compareChart = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: ['Risk Score', 'Temperature °C', 'Humidity %', 'Wind km/h'],
+      datasets: [
+        {
+          label: c1.city,
+          data: [r1.score, c1.temperature, c1.humidity, c1.wind_speed],
+          backgroundColor: '#00d4ff44',
+          borderColor: '#00d4ff',
+          borderWidth: 2,
+          borderRadius: 4
+        },
+        {
+          label: c2.city,
+          data: [r2.score, c2.temperature, c2.humidity, c2.wind_speed],
+          backgroundColor: '#f59e0b44',
+          borderColor: '#f59e0b',
+          borderWidth: 2,
+          borderRadius: 4
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      plugins: { legend: { labels: { color: '#c8d8e8', font: { family: 'Space Mono', size: 10 } } } },
+      scales: {
+        x: { ticks: { color: '#6b8090', font: { family: 'Space Mono', size: 10 } }, grid: { color: '#1e2d3d' } },
+        y: { ticks: { color: '#6b8090', font: { family: 'Space Mono', size: 10 } }, grid: { color: '#1e2d3d' } }
+      }
+    }
+  });
+}
+
+function renderRadar(d1, d2) {
+  if (radarChart) radarChart.destroy();
+  const w1 = d1.weather, w2 = d2.weather;
+
+  function norm(temp, hum, wind, pres) {
+    return [
+      Math.min(100, Math.max(0, (temp + 10) / 60 * 100)),
+      hum,
+      Math.min(100, wind / 150 * 100),
+      Math.min(100, Math.max(0, (1050 - pres) / 100 * 100))
+    ];
+  }
+
+  const ctx = document.getElementById('radarCompare').getContext('2d');
+  radarChart = new Chart(ctx, {
+    type: 'radar',
+    data: {
+      labels: ['Temperature', 'Humidity', 'Wind Speed', 'Low Pressure'],
+      datasets: [
+        {
+          label: w1.city,
+          data: norm(w1.temperature, w1.humidity, w1.wind_speed, w1.pressure),
+          backgroundColor: 'rgba(0,212,255,0.15)',
+          borderColor: '#00d4ff',
+          pointBackgroundColor: '#00d4ff',
+          borderWidth: 2, pointRadius: 4
+        },
+        {
+          label: w2.city,
+          data: norm(w2.temperature, w2.humidity, w2.wind_speed, w2.pressure),
+          backgroundColor: 'rgba(245,158,11,0.15)',
+          borderColor: '#f59e0b',
+          pointBackgroundColor: '#f59e0b',
+          borderWidth: 2, pointRadius: 4
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      plugins: { legend: { labels: { color: '#c8d8e8', font: { family: 'Space Mono', size: 10 } } } },
+      scales: {
+        r: {
+          min: 0, max: 100,
+          ticks: { color: '#4b6070', font: { family: 'Space Mono', size: 9 }, backdropColor: 'transparent', stepSize: 25 },
+          grid: { color: '#1e2d3d' },
+          pointLabels: { color: '#c8d8e8', font: { family: 'Space Mono', size: 10 } },
+          angleLines: { color: '#1e2d3d' }
+        }
+      }
+    }
+  });
+}
+
+// Auto-run on page load
+runCompare();
+</script>
+{% endblock %}

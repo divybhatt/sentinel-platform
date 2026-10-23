@@ -1,0 +1,45 @@
+version: '3.9'
+
+services:
+  db:
+    image: postgres:15-alpine
+    container_name: sentinel_db
+    environment:
+      POSTGRES_DB: sentinel_db
+      POSTGRES_USER: sentinel
+      POSTGRES_PASSWORD: sentinel_pass
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sentinel -d sentinel_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  web:
+    build: .
+    container_name: sentinel_web
+    ports:
+      - "5000:5000"
+    environment:
+      FLASK_ENV: production
+      DATABASE_URL: postgresql://sentinel:sentinel_pass@db:5432/sentinel_db
+      SECRET_KEY: ${SECRET_KEY:-production-secret-key-change-me}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-production-jwt-key-change-me}
+      WTF_CSRF_SECRET_KEY: ${WTF_CSRF_SECRET_KEY:-production-csrf-key-change-me}
+      MAIL_SERVER: ${MAIL_SERVER:-smtp.gmail.com}
+      MAIL_USERNAME: ${MAIL_USERNAME:-}
+      MAIL_PASSWORD: ${MAIL_PASSWORD:-}
+      RISK_THRESHOLD: ${RISK_THRESHOLD:-70}
+      WEATHER_API_KEY: ${WEATHER_API_KEY:-demo-key}
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+    volumes:
+      - ./ml:/app/ml
+
+volumes:
+  postgres_data:
